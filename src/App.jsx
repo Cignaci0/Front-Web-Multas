@@ -20,8 +20,8 @@ import ExitToAppIcon from '@mui/icons-material/ExitToApp';
 import MenuIcon from '@mui/icons-material/Menu';
 import AdministrarMultas from './pages/Multas/AdministrarMultas';
 import AsignarModulos from './pages/Usuarios/AsignarModulos';
-import AdministrarMunicipio from './pages/Municipios/AdministrarMunicipio';
 import AdministrarInspector from './pages/Usuarios/AdministrarInspector';
+import AdministrarUsuarios from './pages/Usuarios/AdministrarUsuarios';
 
 // === DASHBOARD COMPONENT ===
 function Dashboard({ onLogout }) {
@@ -32,9 +32,8 @@ function Dashboard({ onLogout }) {
         "Administrar Multas": <AdministrarMultas onLogout={onLogout} />,
         "Asignar Modulos": <AsignarModulos onLogout={onLogout} />,
         "Administrar Inspectores": <AdministrarInspector onLogout={onLogout} />,
-        "Administrar Municipios": <AdministrarMunicipio onLogout={onLogout} />,
         "Editar Inspector": <Typography>Vista Editar Inspector (Pendiente)</Typography>,
-        "Administrar Usuarios": <Typography>Vista Administrar Usuarios (Pendiente)</Typography>,
+        "Administrar Usuarios": <AdministrarUsuarios onLogout={onLogout} />,
         // Agrega aquí los demás nombres exactos que vengan de tu base de datos
     };
 

@@ -3,12 +3,14 @@ import {
     Box, Paper, TextField, Button, Table, TableContainer, TableHead,
     TableRow, TableCell, TableBody, Dialog, DialogTitle,
     DialogContent, DialogActions, IconButton, Typography,
-    CircularProgress, TablePagination, Link
+    CircularProgress, TablePagination, Link, Chip,
+    MenuItem, Select, InputLabel, FormControl, Alert
 } from "@mui/material";
 import SearchIcon from '@mui/icons-material/Search';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import CameraAltIcon from '@mui/icons-material/CameraAlt';
+import MapIcon from '@mui/icons-material/Map';
 
 export default function AdministrarMultas({ onLogout }) {
     const [multas, setMultas] = useState([]);
@@ -28,12 +30,43 @@ export default function AdministrarMultas({ onLogout }) {
     const [openDialogEditar, setOpenDialogEditar] = useState(false);
     
     // Campos a editar
-    const [editUbicacion, setEditUbicacion] = useState("");
+    const [padreEdit, setPadreEdit] = useState('');
+    const [formDataEdit, setFormDataEdit] = useState({
+        patente: '',
+        direccion: '',
+        ubicacion: '',
+        tipo_multa: null
+    });
+    const [editando, setEditando] = useState(false);
+    const [editarError, setEditarError] = useState('');
 
     const [selectedMultaEliminar, setSelectedMultaEliminar] = useState(null);
     const [openDialogEliminar, setOpenDialogEliminar] = useState(false);
+    const [motivoEliminacion, setMotivoEliminacion] = useState("");
+    const [eliminando, setEliminando] = useState(false);
+    const [eliminarError, setEliminarError] = useState("");
 
     const [totalMultas, setTotalMultas] = useState(0);
+
+    const [tiposMultaMenu, setTiposMultaMenu] = useState([]);
+
+    useEffect(() => {
+        const fetchTiposMulta = async () => {
+            try {
+                const token = localStorage.getItem('token');
+                const response = await fetch('/tipoMulta/menu', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    setTiposMultaMenu(data);
+                }
+            } catch (error) {
+                console.error("Error fetching tipos multa:", error);
+            }
+        };
+        fetchTiposMulta();
+    }, []);
 
     useEffect(() => {
         const timer = setTimeout(() => {
@@ -96,14 +129,88 @@ export default function AdministrarMultas({ onLogout }) {
 
     const multasAMostrar = multas;
 
-    const handleEditar = () => {
-        alert("Función de editar pendiente de endpoint backend");
-        setOpenDialogEditar(false);
+    const handleEditar = async () => {
+        setEditando(true);
+        setEditarError('');
+        const token = localStorage.getItem('token');
+        
+        try {
+            const payload = {
+                idTipoMulta: formDataEdit.tipo_multa?.id,
+                patente: formDataEdit.patente,
+                direccion: formDataEdit.direccion
+            };
+
+            const response = await fetch(`/multa/edit/${selectedMultaEditar}`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                let errorMsg = 'Error al actualizar la multa';
+                try {
+                    const errorData = await response.json();
+                    if (errorData && errorData.error) errorMsg = errorData.error;
+                    else if (errorData && errorData.message) errorMsg = errorData.message;
+                } catch (e) {}
+                throw new Error(errorMsg);
+            }
+
+            setOpenDialogEditar(false);
+            fetchMultas();
+        } catch (err) {
+            setEditarError(err.message);
+        } finally {
+            setEditando(false);
+        }
     };
 
-    const handleEliminar = () => {
-        alert("Función de eliminar pendiente de endpoint backend");
-        setOpenDialogEliminar(false);
+    const handleEliminar = async () => {
+        if (!motivoEliminacion.trim()) {
+            setEliminarError("Debe ingresar un motivo de eliminación");
+            return;
+        }
+
+        setEliminando(true);
+        setEliminarError("");
+        const token = localStorage.getItem('token');
+
+        try {
+            const payload = {
+                descripcion_desactivada: motivoEliminacion
+            };
+
+            const response = await fetch(`/multa/borrar/${selectedMultaEliminar.id}`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                let errorMsg = 'Error al eliminar la multa';
+                try {
+                    const errorData = await response.json();
+                    if (errorData && errorData.error) errorMsg = errorData.error;
+                    else if (errorData && errorData.message) errorMsg = errorData.message;
+                } catch (e) {}
+                throw new Error(errorMsg);
+            }
+
+            setOpenDialogEliminar(false);
+            setMotivoEliminacion("");
+            fetchMultas();
+        } catch (err) {
+            setEliminarError(err.message);
+        } finally {
+            setEliminando(false);
+        }
     };
 
     return (
@@ -181,8 +288,10 @@ export default function AdministrarMultas({ onLogout }) {
                                     <TableRow>
                                         <TableCell align="center">Fecha</TableCell>
                                         <TableCell align="center">Hora</TableCell>
+                                        <TableCell align="center">Tipo de Multa</TableCell>
                                         <TableCell align="center">Patente</TableCell>
-                                        <TableCell align="center">Ubicación</TableCell>
+                                        <TableCell align="center">Dirección</TableCell>
+                                        <TableCell align="center">Mapa</TableCell>
                                         <TableCell align="center">Acciones</TableCell>
                                     </TableRow>
                                 </TableHead>
@@ -197,17 +306,30 @@ export default function AdministrarMultas({ onLogout }) {
                                                     {new Date(multa.fecha_creacion).toLocaleTimeString()}
                                                 </TableCell>
                                                 <TableCell align="center">
+                                                    <Chip 
+                                                        label={multa.tipo_multa?.nombre || multa.tipoMulta?.nombre || multa.tipo_multa || multa.tipoMulta || 'Desconocido'} 
+                                                        color="primary" 
+                                                        variant="outlined" 
+                                                        size="small" 
+                                                    />
+                                                </TableCell>
+                                                <TableCell align="center">
                                                     {multa.patente || '-'}
                                                 </TableCell>
                                                 <TableCell align="center">
-                                                    <Link 
+                                                    {multa.direccion || '-'}
+                                                </TableCell>
+                                                <TableCell align="center">
+                                                    <IconButton 
+                                                        component="a"
                                                         href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(multa.ubicacion)}`} 
                                                         target="_blank" 
                                                         rel="noopener noreferrer"
-                                                        sx={{ textDecoration: 'none', color: 'primary.main', fontWeight: 'bold', '&:hover': { textDecoration: 'underline' } }}
+                                                        color="primary"
+                                                        title="Ver en Google Maps"
                                                     >
-                                                        {multa.ubicacion}
-                                                    </Link>
+                                                        <MapIcon />
+                                                    </IconButton>
                                                 </TableCell>
                                                 <TableCell align="center">
                                                     <IconButton 
@@ -224,8 +346,25 @@ export default function AdministrarMultas({ onLogout }) {
                                                         color="info" 
                                                         title="Editar Multa"
                                                         onClick={() => {
-                                                            setSelectedMultaEditar(multa);
-                                                            setEditUbicacion(multa.ubicacion);
+                                                            setSelectedMultaEditar(multa.id);
+                                                            const multaTipoId = multa.idTipoMulta || multa.tipo_multa?.id || multa.tipoMulta?.id;
+                                                            let foundPadre = '';
+                                                            if (multaTipoId && tiposMultaMenu.length > 0) {
+                                                                for (const tm of tiposMultaMenu) {
+                                                                    if (tm.hijos && tm.hijos.find(h => h.id === multaTipoId)) {
+                                                                        foundPadre = tm.padre;
+                                                                        break;
+                                                                    }
+                                                                }
+                                                            }
+                                                            setPadreEdit(foundPadre);
+                                                            setFormDataEdit({
+                                                                patente: multa.patente || '',
+                                                                direccion: multa.direccion || '',
+                                                                ubicacion: multa.ubicacion || '',
+                                                                tipo_multa: multaTipoId ? { id: multaTipoId } : null
+                                                            });
+                                                            setEditarError('');
                                                             setOpenDialogEditar(true);
                                                         }}
                                                     >
@@ -236,6 +375,8 @@ export default function AdministrarMultas({ onLogout }) {
                                                         title="Eliminar Multa"
                                                         onClick={() => {
                                                             setSelectedMultaEliminar(multa);
+                                                            setMotivoEliminacion("");
+                                                            setEliminarError("");
                                                             setOpenDialogEliminar(true);
                                                         }}
                                                     >
@@ -246,7 +387,7 @@ export default function AdministrarMultas({ onLogout }) {
                                         ))
                                     ) : (
                                         <TableRow>
-                                            <TableCell colSpan={5} align="center" sx={{ py: 3 }}>
+                                            <TableCell colSpan={7} align="center" sx={{ py: 3 }}>
                                                 <Typography variant="body1" color="text.secondary">
                                                     No se encontraron registros.
                                                 </Typography>
@@ -316,44 +457,115 @@ export default function AdministrarMultas({ onLogout }) {
 
             {/* Dialog - Editar */}
             <Dialog open={openDialogEditar} onClose={() => setOpenDialogEditar(false)} maxWidth="sm" fullWidth>
-                <DialogTitle>Editar Multa</DialogTitle>
+                <DialogTitle sx={{ fontWeight: 'bold', color: '#1e3c72' }}>Editar Multa</DialogTitle>
                 <DialogContent dividers>
-                    <Box sx={{ mt: 1 }}>
+                    {editarError && <Alert severity="error" sx={{ mb: 2 }}>{editarError}</Alert>}
+                    <Box sx={{ mt: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <FormControl fullWidth variant="outlined">
+                            <InputLabel>Categoría de Multa (Padre)</InputLabel>
+                            <Select
+                                value={padreEdit}
+                                onChange={(e) => {
+                                    setPadreEdit(e.target.value);
+                                    setFormDataEdit(prev => ({ ...prev, tipo_multa: null }));
+                                }}
+                                label="Categoría de Multa (Padre)"
+                            >
+                                {tiposMultaMenu.map(tm => (
+                                    <MenuItem key={tm.padre} value={tm.padre}>{tm.padre}</MenuItem>
+                                ))}
+                            </Select>
+                        </FormControl>
+
+                        <FormControl fullWidth variant="outlined">
+                            <InputLabel>Tipo de Multa Específico</InputLabel>
+                            <Select
+                                value={formDataEdit.tipo_multa?.id || ''}
+                                onChange={(e) => setFormDataEdit(prev => ({ ...prev, tipo_multa: { id: e.target.value } }))}
+                                label="Tipo de Multa Específico"
+                                disabled={!padreEdit}
+                            >
+                                {padreEdit && tiposMultaMenu.find(tm => tm.padre === padreEdit)?.hijos.map(hijo => (
+                                    <MenuItem key={hijo.id} value={hijo.id}>{hijo.nombre}</MenuItem>
+                                ))}
+                            </Select>
+                        </FormControl>
+
                         <TextField
                             fullWidth
-                            label="Ubicación"
-                            size="small"
-                            value={editUbicacion}
-                            onChange={(e) => setEditUbicacion(e.target.value)}
+                            label="Patente"
+                            name="patente"
+                            variant="outlined"
+                            value={formDataEdit.patente}
+                            onChange={(e) => setFormDataEdit(prev => ({ ...prev, patente: e.target.value }))}
                         />
+                        <TextField
+                            fullWidth
+                            label="Dirección"
+                            name="direccion"
+                            variant="outlined"
+                            value={formDataEdit.direccion}
+                            onChange={(e) => setFormDataEdit(prev => ({ ...prev, direccion: e.target.value }))}
+                        />
+             
                     </Box>
-                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 2 }}>
-                        * La edición real requiere el endpoint del backend.
-                    </Typography>
                 </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setOpenDialogEditar(false)} color="error">Cancelar</Button>
-                    <Button onClick={handleEditar} variant="contained" color="primary">Guardar</Button>
+                <DialogActions sx={{ p: 2 }}>
+                    <Button onClick={() => setOpenDialogEditar(false)} color="inherit" sx={{ fontWeight: 'bold' }}>
+                        Cancelar
+                    </Button>
+                    <Button 
+                        onClick={handleEditar} 
+                        variant="contained" 
+                        color="primary"
+                        disabled={editando}
+                        sx={{ fontWeight: 'bold', borderRadius: 2 }}
+                    >
+                        {editando ? <CircularProgress size={24} /> : "Guardar Cambios"}
+                    </Button>
                 </DialogActions>
             </Dialog>
 
             {/* Dialog - Eliminar */}
-            <Dialog open={openDialogEliminar} onClose={() => setOpenDialogEliminar(false)} maxWidth="xs" fullWidth>
-                <DialogTitle>Eliminar Multa</DialogTitle>
+            <Dialog open={openDialogEliminar} onClose={() => setOpenDialogEliminar(false)} maxWidth="sm" fullWidth>
+                <DialogTitle sx={{ fontWeight: 'bold', color: '#d32f2f' }}>Eliminar Multa</DialogTitle>
                 <DialogContent dividers>
-                    <Typography>¿Estás seguro de que deseas eliminar esta multa?</Typography>
+                    {eliminarError && <Alert severity="error" sx={{ mb: 2 }}>{eliminarError}</Alert>}
+                    <Typography gutterBottom>
+                        ¿Estás seguro de que deseas eliminar esta multa? Esta acción requiere confirmación y un motivo.
+                    </Typography>
                     {selectedMultaEliminar && (
-                        <Typography variant="body2" sx={{ mt: 1, color: 'text.secondary' }}>
-                            Ubicación: {selectedMultaEliminar.ubicacion}
+                        <Typography variant="body2" sx={{ mt: 1, color: 'text.secondary', mb: 2 }}>
+                            Patente: {selectedMultaEliminar.patente || 'N/A'} - Fecha: {new Date(selectedMultaEliminar.fecha_creacion).toLocaleDateString()}
                         </Typography>
                     )}
-                    <Typography variant="caption" color="error" sx={{ display: 'block', mt: 2 }}>
-                        * La eliminación real requiere el endpoint del backend.
-                    </Typography>
+                    
+                    <Box sx={{ mt: 2 }}>
+                        <TextField
+                            fullWidth
+                            label="Motivo de Eliminación"
+                            variant="outlined"
+                            multiline
+                            rows={3}
+                            value={motivoEliminacion}
+                            onChange={(e) => setMotivoEliminacion(e.target.value)}
+                            required
+                        />
+                    </Box>
                 </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setOpenDialogEliminar(false)} color="primary">Cancelar</Button>
-                    <Button onClick={handleEliminar} variant="contained" color="error">Eliminar</Button>
+                <DialogActions sx={{ p: 2 }}>
+                    <Button onClick={() => setOpenDialogEliminar(false)} color="inherit" sx={{ fontWeight: 'bold' }}>
+                        Cancelar
+                    </Button>
+                    <Button 
+                        onClick={handleEliminar} 
+                        variant="contained" 
+                        color="error"
+                        disabled={eliminando || !motivoEliminacion.trim()}
+                        sx={{ fontWeight: 'bold', borderRadius: 2 }}
+                    >
+                        {eliminando ? <CircularProgress size={24} /> : "Confirmar y Eliminar"}
+                    </Button>
                 </DialogActions>
             </Dialog>
         </Box>

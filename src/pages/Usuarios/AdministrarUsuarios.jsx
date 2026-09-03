@@ -4,31 +4,32 @@ import {
     TableRow, TableCell, TableBody, Dialog, DialogTitle,
     DialogContent, DialogActions, IconButton, Typography,
     CircularProgress, TablePagination, Select, MenuItem,
-    FormControl, InputLabel, TextField, Alert, Grid
+    FormControl, InputLabel, TextField, Alert, Chip, Switch, FormControlLabel
 } from "@mui/material";
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
 import { regiones, comunas } from "../../utils/dataGeografica";
 
-function AdministrarInspector({ onLogout }) {
-    const [inspectores, setInspectores] = useState([]);
+function AdministrarUsuarios({ onLogout }) {
+    const [usuarios, setUsuarios] = useState([]);
+    const [perfiles, setPerfiles] = useState([]);
     const [cargando, setCargando] = useState(false);
     const [error, setError] = useState(null);
 
     // Paginación
     const [pagina, setPagina] = useState(0);
     const [filaPorPagina, setFilaPorPagina] = useState(10);
-    const [totalInspectores, setTotalInspectores] = useState(0);
+    const [totalUsuarios, setTotalUsuarios] = useState(0);
 
     // Modal Crear
     const [openDialogCrear, setOpenDialogCrear] = useState(false);
     const [formData, setFormData] = useState({
+        username: '',
         password: '',
         email: '',
-        nombre: '',
-        apellido: '',
-        comuna: ''
+        comuna: '',
+        perfil: '' // guardará el ID del perfil
     });
     
     // Selectores geográficos
@@ -42,12 +43,15 @@ function AdministrarInspector({ onLogout }) {
 
     // Modal Editar
     const [openDialogEditar, setOpenDialogEditar] = useState(false);
-    const [inspectorEditando, setInspectorEditando] = useState(null);
+    const [usuarioEditando, setUsuarioEditando] = useState(null);
     const [formDataEdit, setFormDataEdit] = useState({
+        username: '',
+        password: '', // Opcional al editar
         email: '',
-        nombre: '',
-        apellido: '',
-        comuna: ''
+        comuna: '',
+        perfil: '',
+        estado: true,
+        es_inspector: false
     });
     const [formRegionEdit, setFormRegionEdit] = useState('');
     const [formComunaIdEdit, setFormComunaIdEdit] = useState('');
@@ -58,17 +62,36 @@ function AdministrarInspector({ onLogout }) {
 
     useEffect(() => {
         const timer = setTimeout(() => {
-            fetchInspectores();
+            fetchUsuarios();
         }, 300);
         return () => clearTimeout(timer);
     }, [pagina, filaPorPagina]);
 
-    const fetchInspectores = async () => {
+    useEffect(() => {
+        fetchPerfiles();
+    }, []);
+
+    const fetchPerfiles = async () => {
+        try {
+            const token = localStorage.getItem('token');
+            const response = await fetch('/perfil', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setPerfiles(data);
+            }
+        } catch (e) {
+            console.error("Error al cargar perfiles", e);
+        }
+    };
+
+    const fetchUsuarios = async () => {
         try {
             setCargando(true);
             const token = localStorage.getItem('token');
             
-            const response = await fetch(`/inspector?pagina=${pagina}&tamanio=${filaPorPagina}`, {
+            const response = await fetch(`/usuario?pagina=${pagina}&tamanio=${filaPorPagina}`, {
                 headers: {
                     'Authorization': `Bearer ${token}`
                 }
@@ -78,18 +101,18 @@ function AdministrarInspector({ onLogout }) {
                     if (onLogout) onLogout();
                     return;
                 }
-                throw new Error('No se pudieron obtener los inspectores');
+                throw new Error('No se pudieron obtener los usuarios');
             }
             
             const data = await response.json();
             
             if (data && data.content) {
-                setInspectores(data.content);
-                setTotalInspectores(data.totalElements || 0);
+                setUsuarios(data.content);
+                setTotalUsuarios(data.totalElements || 0);
             } else {
                 const arr = Array.isArray(data) ? data : [];
-                setInspectores(arr);
-                setTotalInspectores(data.totalElements || arr.length);
+                setUsuarios(arr);
+                setTotalUsuarios(data.totalElements || arr.length);
             }
         } catch (err) {
             setError(err.message);
@@ -98,16 +121,14 @@ function AdministrarInspector({ onLogout }) {
         }
     };
 
-    // fetchMunicipiosPorComuna eliminado
-
     const handleFormChange = (e) => {
         const { name, value } = e.target;
         setFormData(prev => ({ ...prev, [name]: value }));
     };
 
     const handleCrear = async () => {
-        if (!formData.username || !formData.password || !formData.nombre || !formData.apellido || !formData.comuna) {
-            setCrearError('Todos los campos son obligatorios');
+        if (!formData.username || !formData.password || !formData.email || !formData.perfil) {
+            setCrearError('Los campos Username, Password, Email y Perfil son obligatorios');
             return;
         }
 
@@ -118,14 +139,13 @@ function AdministrarInspector({ onLogout }) {
         const payload = {
             username: formData.username,
             password: formData.password,
-            nombre: formData.nombre,
-            apellido: formData.apellido,
+            email: formData.email,
             comuna: formData.comuna,
-            email: formData.email
+            perfil: { id: formData.perfil }
         };
 
         try {
-            const response = await fetch('/usuario/inspector', {
+            const response = await fetch(`/usuario`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -135,7 +155,7 @@ function AdministrarInspector({ onLogout }) {
             });
 
             if (!response.ok) {
-                let errorMsg = 'Error al crear el inspector';
+                let errorMsg = 'Error al crear el usuario';
                 try {
                     const errorData = await response.json();
                     if (errorData && errorData.error) {
@@ -143,15 +163,17 @@ function AdministrarInspector({ onLogout }) {
                     } else if (errorData && errorData.message) {
                         errorMsg = errorData.message;
                     }
-                } catch (e) {}
+                } catch (e) {
+                    // Fallback
+                }
                 throw new Error(errorMsg);
             }
 
             setOpenDialogCrear(false);
-            setFormData({ username: '', password: '', email: '', nombre: '', apellido: '', comuna: '' });
+            setFormData({ username: '', password: '', email: '', comuna: '', perfil: '' });
             setFormRegion('');
             setFormComunaId('');
-            fetchInspectores();
+            fetchUsuarios();
         } catch (err) {
             setCrearError(err.message);
         } finally {
@@ -160,24 +182,29 @@ function AdministrarInspector({ onLogout }) {
     };
 
     const handleFormEditChange = (e) => {
-        const { name, value } = e.target;
-        setFormDataEdit(prev => ({ ...prev, [name]: value }));
+        const { name, value, type, checked } = e.target;
+        setFormDataEdit(prev => ({ 
+            ...prev, 
+            [name]: type === 'checkbox' ? checked : value 
+        }));
     };
 
-    const handleOpenEditar = (insp) => {
-        setInspectorEditando(insp.id);
+    const handleOpenEditar = (usu) => {
+        setUsuarioEditando(usu.id);
         setFormDataEdit({
-            username: insp.usernameUsuario || '',
-            email: insp.email || '',
-            nombre: insp.nombre || '',
-            apellido: insp.apeliido || insp.apellido || '',
-            comuna: insp.comuna || ''
+            username: usu.username || '',
+            password: '', // En blanco por seguridad, si no se llena no se actualiza
+            email: usu.email || '',
+            comuna: usu.comuna || '',
+            perfil: usu.idPerfil || (typeof usu.perfil === 'object' ? usu.perfil?.id : usu.perfil) || '',
+            estado: usu.estado !== undefined ? usu.estado : true,
+            es_inspector: usu.es_inspector !== undefined ? usu.es_inspector : false
         });
         setEditarError('');
 
         // Cargar comuna preseleccionada
-        if (insp.comuna) {
-            const comunaObj = comunas.find(c => c.nombre.toLowerCase() === insp.comuna.toLowerCase());
+        if (usu.comuna) {
+            const comunaObj = comunas.find(c => c.nombre.toLowerCase() === usu.comuna.toLowerCase());
             if (comunaObj) {
                 setFormRegionEdit(comunaObj.regionId);
                 setFormComunaIdEdit(comunaObj.id);
@@ -194,8 +221,8 @@ function AdministrarInspector({ onLogout }) {
     };
 
     const handleEditar = async () => {
-        if (!formDataEdit.nombre || !formDataEdit.apellido || !formDataEdit.comuna) {
-            setEditarError('Todos los campos son obligatorios');
+        if (!formDataEdit.username || !formDataEdit.perfil) {
+            setEditarError('Los campos Username y Perfil son obligatorios');
             return;
         }
 
@@ -204,15 +231,20 @@ function AdministrarInspector({ onLogout }) {
         const token = localStorage.getItem('token');
 
         const payload = {
-           
             email: formDataEdit.email,
-            nombre: formDataEdit.nombre,
-            apellido: formDataEdit.apellido,
+            estado: formDataEdit.estado,
+            username: formDataEdit.username,
+            perfil: Number(formDataEdit.perfil),
+            es_inspector: formDataEdit.es_inspector,
             comuna: formDataEdit.comuna
         };
+        
+        if (formDataEdit.password) {
+            payload.password = formDataEdit.password;
+        }
 
         try {
-            const response = await fetch(`/inspector/${inspectorEditando}`, {
+            const response = await fetch(`/usuario/${usuarioEditando}`, {
                 method: 'PATCH',
                 headers: {
                     'Content-Type': 'application/json',
@@ -222,7 +254,7 @@ function AdministrarInspector({ onLogout }) {
             });
 
             if (!response.ok) {
-                let errorMsg = 'Error al actualizar el inspector';
+                let errorMsg = 'Error al actualizar el usuario';
                 try {
                     const errorData = await response.json();
                     if (errorData && errorData.error) errorMsg = errorData.error;
@@ -232,7 +264,7 @@ function AdministrarInspector({ onLogout }) {
             }
 
             setOpenDialogEditar(false);
-            fetchInspectores();
+            fetchUsuarios();
         } catch (err) {
             setEditarError(err.message);
         } finally {
@@ -254,7 +286,7 @@ function AdministrarInspector({ onLogout }) {
             }}>
                 <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Typography variant="h5" sx={{ fontWeight: 'bold', color: '#1e3c72' }}>
-                        Administración de Inspectores
+                        Administración de Usuarios
                     </Typography>
                     <Button 
                         variant="contained" 
@@ -263,7 +295,7 @@ function AdministrarInspector({ onLogout }) {
                         sx={{ borderRadius: 2, fontWeight: 'bold' }}
                         onClick={() => setOpenDialogCrear(true)}
                     >
-                        Crear Inspector
+                        Crear Usuario
                     </Button>
                 </Box>
 
@@ -286,21 +318,41 @@ function AdministrarInspector({ onLogout }) {
                                 <Table stickyHeader>
                                     <TableHead sx={{ '& th': { bgcolor: '#f9f9f9', borderBottom: '2px solid #ddd', fontWeight: 'bold' } }}>
                                         <TableRow>
+                                            <TableCell align="center">Username</TableCell>
                                             <TableCell align="center">Email</TableCell>
-                                            <TableCell align="center">Nombre Completo</TableCell>
+                                            <TableCell align="center">Perfil</TableCell>
                                             <TableCell align="center">Comuna</TableCell>
+                                            <TableCell align="center">Tipo</TableCell>
+                                            <TableCell align="center">Estado</TableCell>
                                             <TableCell align="center">Acciones</TableCell>
                                         </TableRow>
                                     </TableHead>
                                     <TableBody>
-                                        {inspectores.length > 0 ? (
-                                            inspectores.map((insp) => (
-                                                <TableRow key={insp.id} hover sx={{ '&:last-child td, &:last-child th': { border: 0 } }}>
-                                                    <TableCell align="center">{insp.email || '-'}</TableCell>
-                                                    <TableCell align="center">{insp.nombre} {insp.apeliido || insp.apellido}</TableCell>
-                                                    <TableCell align="center">{insp.comuna}</TableCell>
+                                        {usuarios.length > 0 ? (
+                                            usuarios.map((usu) => (
+                                                <TableRow key={usu.id} hover sx={{ '&:last-child td, &:last-child th': { border: 0 } }}>
+                                                    <TableCell align="center">{usu.username}</TableCell>
+                                                    <TableCell align="center">{usu.email || '-'}</TableCell>
                                                     <TableCell align="center">
-                                                        <IconButton color="primary" onClick={() => handleOpenEditar(insp)}>
+                                                        <Chip label={usu.nombrePerfil || 'N/A'} color="primary" variant="outlined" size="small" />
+                                                    </TableCell>
+                                                    <TableCell align="center">{usu.comuna || '-'}</TableCell>
+                                                    <TableCell align="center">
+                                                        {usu.es_inspector ? (
+                                                            <Chip label="Inspector" color="primary" size="small" />
+                                                        ) : (
+                                                            <Chip label="Regular" color="default" size="small" />
+                                                        )}
+                                                    </TableCell>
+                                                    <TableCell align="center">
+                                                        {usu.estado ? (
+                                                            <Chip label="Activo" color="success" size="small" />
+                                                        ) : (
+                                                            <Chip label="Inactivo" color="error" size="small" />
+                                                        )}
+                                                    </TableCell>
+                                                    <TableCell align="center">
+                                                        <IconButton color="primary" onClick={() => handleOpenEditar(usu)}>
                                                             <EditIcon />
                                                         </IconButton>
                                                         <IconButton color="error" onClick={() => alert("Eliminar pendiente")}>
@@ -311,7 +363,7 @@ function AdministrarInspector({ onLogout }) {
                                             ))
                                         ) : (
                                             <TableRow>
-                                                <TableCell colSpan={5} align="center" sx={{ py: 3 }}>
+                                                <TableCell colSpan={6} align="center" sx={{ py: 3 }}>
                                                     <Typography variant="body1" color="text.secondary">
                                                         No se encontraron registros.
                                                     </Typography>
@@ -324,7 +376,7 @@ function AdministrarInspector({ onLogout }) {
                             <TablePagination
                                 rowsPerPageOptions={[5, 10, 20]}
                                 component="div"
-                                count={totalInspectores}
+                                count={totalUsuarios}
                                 rowsPerPage={filaPorPagina}
                                 page={pagina}
                                 onPageChange={(e, newPage) => setPagina(newPage)}
@@ -340,14 +392,13 @@ function AdministrarInspector({ onLogout }) {
                 </Box>
             </Paper>
 
-            {/* Dialog - Crear Inspector */}
+            {/* Dialog - Crear Usuario */}
             <Dialog open={openDialogCrear} onClose={() => setOpenDialogCrear(false)} maxWidth="md" fullWidth>
-                <DialogTitle sx={{ fontWeight: 'bold', color: '#1e3c72' }}>Crear Nuevo Inspector</DialogTitle>
+                <DialogTitle sx={{ fontWeight: 'bold', color: '#1e3c72' }}>Crear Nuevo Usuario</DialogTitle>
                 <DialogContent>
                     {crearError && <Alert severity="error" sx={{ mb: 2, mt: 1 }}>{crearError}</Alert>}
                     
                     <Box sx={{ mt: 2, display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2 }}>
-                    
                         <TextField
                             label="Username"
                             name="username"
@@ -374,23 +425,21 @@ function AdministrarInspector({ onLogout }) {
                             value={formData.email}
                             onChange={handleFormChange}
                         />
-                        <TextField
-                            label="Nombre"
-                            name="nombre"
-                            variant="outlined"
-                            fullWidth
-                            value={formData.nombre}
-                            onChange={handleFormChange}
-                        />
-                        <TextField
-                            label="Apellido"
-                            name="apellido"
-                            variant="outlined"
-                            fullWidth
-                            value={formData.apellido}
-                            onChange={handleFormChange}
-                        />
                         
+                        <FormControl fullWidth>
+                            <InputLabel>Perfil</InputLabel>
+                            <Select
+                                name="perfil"
+                                value={formData.perfil}
+                                label="Perfil"
+                                onChange={handleFormChange}
+                            >
+                                {perfiles.map((p) => (
+                                    <MenuItem key={p.id} value={p.id}>{p.nombre}</MenuItem>
+                                ))}
+                            </Select>
+                        </FormControl>
+
                         <Box sx={{ gridColumn: { xs: '1', sm: '1 / span 2' }, mt: 2 }}>
                             <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 'bold', color: '#666' }}>
                                 Asignación de Comuna
@@ -452,14 +501,21 @@ function AdministrarInspector({ onLogout }) {
                 </DialogActions>
             </Dialog>
 
-            {/* Dialog - Editar Inspector */}
+            {/* Dialog - Editar Usuario */}
             <Dialog open={openDialogEditar} onClose={() => setOpenDialogEditar(false)} maxWidth="md" fullWidth>
-                <DialogTitle sx={{ fontWeight: 'bold', color: '#1e3c72' }}>Editar Inspector</DialogTitle>
+                <DialogTitle sx={{ fontWeight: 'bold', color: '#1e3c72' }}>Editar Usuario</DialogTitle>
                 <DialogContent>
                     {editarError && <Alert severity="error" sx={{ mb: 2, mt: 1 }}>{editarError}</Alert>}
                     
                     <Box sx={{ mt: 2, display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2 }}>
-                      
+                        <TextField
+                            label="Username"
+                            name="username"
+                            variant="outlined"
+                            fullWidth
+                            value={formDataEdit.username}
+                            onChange={handleFormEditChange}
+                        />
                         <TextField
                             label="Email"
                             name="email"
@@ -469,23 +525,36 @@ function AdministrarInspector({ onLogout }) {
                             value={formDataEdit.email}
                             onChange={handleFormEditChange}
                         />
-                        <TextField
-                            label="Nombre"
-                            name="nombre"
-                            variant="outlined"
-                            fullWidth
-                            value={formDataEdit.nombre}
-                            onChange={handleFormEditChange}
-                        />
-                        <TextField
-                            label="Apellido"
-                            name="apellido"
-                            variant="outlined"
-                            fullWidth
-                            value={formDataEdit.apellido}
-                            onChange={handleFormEditChange}
-                        />
-                        
+
+                        <FormControl fullWidth>
+                            <InputLabel>Perfil</InputLabel>
+                            <Select
+                                name="perfil"
+                                value={formDataEdit.perfil}
+                                label="Perfil"
+                                onChange={handleFormEditChange}
+                            >
+                                {perfiles.map((p) => (
+                                    <MenuItem key={p.id} value={p.id}>{p.nombre}</MenuItem>
+                                ))}
+                            </Select>
+                        </FormControl>
+
+                        <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', ml: { sm: 2 } }}>
+                            <FormControlLabel
+                                control={
+                                    <Switch
+                                        checked={formDataEdit.estado}
+                                        onChange={handleFormEditChange}
+                                        name="estado"
+                                        color="primary"
+                                    />
+                                }
+                                label="Activo"
+                            />
+                          
+                        </Box>
+
                         <Box sx={{ gridColumn: { xs: '1', sm: '1 / span 2' }, mt: 2 }}>
                             <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 'bold', color: '#666' }}>
                                 Asignación de Comuna
@@ -550,4 +619,4 @@ function AdministrarInspector({ onLogout }) {
     );
 }
 
-export default AdministrarInspector;
+export default AdministrarUsuarios;
