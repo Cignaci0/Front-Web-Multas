@@ -1,5 +1,3 @@
-//hola
-
 import React, { useState, useEffect } from 'react';
 import {
     Box, Paper, TextField, Button, Table, TableContainer, TableHead,
