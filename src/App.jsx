@@ -19,9 +19,11 @@ import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import ExitToAppIcon from '@mui/icons-material/ExitToApp';
 import MenuIcon from '@mui/icons-material/Menu';
 import AdministrarMultas from './pages/Multas/AdministrarMultas';
+import AdministrarMultasEliminadas from './pages/Multas/AdministrarMultasEliminadas';
 import AsignarModulos from './pages/Usuarios/AsignarModulos';
 import AdministrarInspector from './pages/Usuarios/AdministrarInspector';
 import AdministrarUsuarios from './pages/Usuarios/AdministrarUsuarios';
+import { loginWeb, getMenu } from './services/authService';
 
 // === DASHBOARD COMPONENT ===
 function Dashboard({ onLogout }) {
@@ -30,11 +32,11 @@ function Dashboard({ onLogout }) {
     // Objeto con mapeo de vistas (nombres que vienen de BD a componentes)
     const COMPONENTES_VISTA = {
         "Administrar Multas": <AdministrarMultas onLogout={onLogout} />,
+        "Administrar Multas Eliminadas": <AdministrarMultasEliminadas onLogout={onLogout} />,
         "Asignar Modulos": <AsignarModulos onLogout={onLogout} />,
         "Administrar Inspectores": <AdministrarInspector onLogout={onLogout} />,
         "Editar Inspector": <Typography>Vista Editar Inspector (Pendiente)</Typography>,
         "Administrar Usuarios": <AdministrarUsuarios onLogout={onLogout} />,
-        // Agrega aquí los demás nombres exactos que vengan de tu base de datos
     };
 
     const [menuData, setMenuData] = useState([]);
@@ -43,15 +45,11 @@ function Dashboard({ onLogout }) {
     useEffect(() => {
         const fetchMenu = async () => {
             try {
-                const token = localStorage.getItem('token');
-                const response = await fetch('/modulo/menu', {
-                    headers: {
-                        'Authorization': `Bearer ${token}`
-                    }
-                });
-                if (response.ok) {
-                    const data = await response.json();
+                const { ok, status, data } = await getMenu();
+                if (ok && data) {
                     setMenuData(data);
+                } else if (status === 401 || status === 403) {
+                    onLogout();
                 }
             } catch (err) {
                 console.error("Error al obtener el menú", err);
@@ -114,13 +112,11 @@ function Dashboard({ onLogout }) {
                             <React.Fragment key={index}>
                                 <ListItemButton onClick={() => handleToggleMenu(menuGroup.padre)}>
                                     <ListItemText 
-                                        primary={menuGroup.padre} 
-                                        primaryTypographyProps={{ 
-                                            fontSize: '18px', 
-                                            fontWeight: 'bold', 
-                                            color: "black", 
-                                            fontFamily: 'Roboto, sans-serif' 
-                                        }} 
+                                        primary={
+                                            <Typography sx={{ fontSize: '18px', fontWeight: 'bold', color: "black", fontFamily: 'Roboto, sans-serif' }}>
+                                                {menuGroup.padre}
+                                            </Typography>
+                                        } 
                                     />
                                     {openSubMenus[menuGroup.padre] ? <ExpandLess /> : <ExpandMore />}
                                 </ListItemButton>
@@ -152,7 +148,7 @@ function Dashboard({ onLogout }) {
                         }}
                     >
                         <ExitToAppIcon sx={{ mr: 2, transform: 'rotate(180deg)' }} />
-                        <ListItemText primary="Cerrar sesión" primaryTypographyProps={{ fontWeight: 'bold' }} />
+                        <ListItemText primary={<Typography sx={{ fontWeight: 'bold' }}>Cerrar sesión</Typography>} />
                     </ListItemButton>
                 </Box>
             </Drawer>
@@ -202,20 +198,9 @@ function Login({ onLoginSuccess }) {
         setLoading(true);
         
         try {
-            const response = await fetch('/usuario/loginWeb', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    username: username,
-                    password: password 
-                })
-            });
+            const { ok, data } = await loginWeb(username, password);
             
-            const data = await response.json();
-            
-            if (!response.ok || data.error) {
+            if (!ok || data.error) {
                 setError(data.error || "Ocurrió un error al intentar iniciar sesión");
             } else if (data.token) {
                 onLoginSuccess(data.token);
@@ -323,17 +308,63 @@ const theme = createTheme({
 
 // === APP COMPONENT ===
 function App() {
-    const [token, setToken] = useState(localStorage.getItem('token'));
+    const [token, setToken] = useState(sessionStorage.getItem('token') || localStorage.getItem('token'));
+    const [cargandoSesion, setCargandoSesion] = useState(true);
+
+    useEffect(() => {
+        const verificarToken = async () => {
+            const tokenGuardado = sessionStorage.getItem('token') || localStorage.getItem('token');
+            
+            if (!tokenGuardado) {
+                setToken(null);
+                setCargandoSesion(false);
+                return;
+            }
+
+            try {
+                const { ok, status } = await getMenu();
+
+                if (ok) {
+                    sessionStorage.setItem('token', tokenGuardado);
+                    localStorage.removeItem('token');
+                    setToken(tokenGuardado);
+                } else if (status === 401 || status === 403) {
+                    sessionStorage.removeItem('token');
+                    localStorage.removeItem('token');
+                    setToken(null);
+                }
+            } catch (err) {
+                console.error("Error al verificar la validez del token", err);
+            } finally {
+                setCargandoSesion(false);
+            }
+        };
+
+        verificarToken();
+    }, []);
 
     const handleLoginSuccess = (newToken) => {
-        localStorage.setItem('token', newToken);
+        sessionStorage.setItem('token', newToken);
+        localStorage.removeItem('token');
         setToken(newToken);
     };
 
     const handleLogout = () => {
+        sessionStorage.removeItem('token');
         localStorage.removeItem('token');
         setToken(null);
     };
+
+    if (cargandoSesion && token) {
+        return (
+            <ThemeProvider theme={theme}>
+                <CssBaseline />
+                <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh' }}>
+                    <CircularProgress />
+                </Box>
+            </ThemeProvider>
+        );
+    }
 
     return (
         <ThemeProvider theme={theme}>

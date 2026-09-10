@@ -4,13 +4,14 @@ import {
     TableRow, TableCell, TableBody, Dialog, DialogTitle,
     DialogContent, DialogActions, IconButton, Typography,
     CircularProgress, TablePagination, Link, Chip,
-    MenuItem, Select, InputLabel, FormControl, Alert
+    MenuItem, Select, InputLabel, FormControl, Alert, Autocomplete
 } from "@mui/material";
 import SearchIcon from '@mui/icons-material/Search';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import CameraAltIcon from '@mui/icons-material/CameraAlt';
 import MapIcon from '@mui/icons-material/Map';
+import { getTiposMultaMenu, getMultas, editarMulta, eliminarMulta, buscarTiposMulta } from '../../services/multasService';
 
 export default function AdministrarMultas({ onLogout }) {
     const [multas, setMultas] = useState([]);
@@ -40,6 +41,11 @@ export default function AdministrarMultas({ onLogout }) {
     const [editando, setEditando] = useState(false);
     const [editarError, setEditarError] = useState('');
 
+    // Búsqueda dinámica de tipos de multa para Autocomplete
+    const [opcionesTipoMulta, setOpcionesTipoMulta] = useState([]);
+    const [cargandoTiposMulta, setCargandoTiposMulta] = useState(false);
+    const [inputValueTipoMulta, setInputValueTipoMulta] = useState('');
+
     const [selectedMultaEliminar, setSelectedMultaEliminar] = useState(null);
     const [openDialogEliminar, setOpenDialogEliminar] = useState(false);
     const [motivoEliminacion, setMotivoEliminacion] = useState("");
@@ -51,24 +57,27 @@ export default function AdministrarMultas({ onLogout }) {
     const [tiposMultaMenu, setTiposMultaMenu] = useState([]);
 
     useEffect(() => {
-        const fetchTiposMulta = async () => {
+        if (!openDialogEditar) return;
+        const timer = setTimeout(async () => {
+            setCargandoTiposMulta(true);
             try {
-                const token = localStorage.getItem('token');
-                const response = await fetch('/tipoMulta/menu', {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                if (response.ok) {
-                    const data = await response.json();
-                    setTiposMultaMenu(data);
-                }
-            } catch (error) {
-                console.error("Error fetching tipos multa:", error);
+                const data = await buscarTiposMulta(inputValueTipoMulta);
+                setOpcionesTipoMulta(data);
+            } catch (err) {
+                console.error("Error al buscar tipos de multa:", err);
+            } finally {
+                setCargandoTiposMulta(false);
             }
-        };
-        fetchTiposMulta();
-    }, []);
+        }, 300);
+
+        return () => clearTimeout(timer);
+    }, [inputValueTipoMulta, openDialogEditar]);
 
     useEffect(() => {
+        if (!busqueda) {
+            fetchMultas();
+            return;
+        }
         const timer = setTimeout(() => {
             fetchMultas();
         }, 300);
@@ -78,30 +87,7 @@ export default function AdministrarMultas({ onLogout }) {
     const fetchMultas = async () => {
         try {
             setCargando(true);
-            const token = localStorage.getItem('token');
-            
-            const queryParams = new URLSearchParams({
-                pagina: pagina,
-                tamanio: filaPorPagina
-            });
-
-            const urlBase = busqueda ? `/multa/${encodeURIComponent(busqueda)}` : '/multa';
-            const url = `${urlBase}?${queryParams.toString()}`;
-
-            const response = await fetch(url, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-            if (!response.ok) {
-                if (response.status === 401 || response.status === 403) {
-                    if (onLogout) onLogout();
-                    return;
-                }
-                throw new Error('No se pudieron obtener las multas (Error HTTP ' + response.status + ')');
-            }
-            
-            const data = await response.json();
+            const data = await getMultas(pagina, filaPorPagina, busqueda);
             
             if (data && data.content) {
                 setMultas(data.content);
@@ -112,6 +98,10 @@ export default function AdministrarMultas({ onLogout }) {
                 setTotalMultas(data.totalElements || arr.length);
             }
         } catch (err) {
+            if (err.status === 401 || err.status === 403) {
+                if (onLogout) onLogout();
+                return;
+            }
             setError(err.message);
         } finally {
             setCargando(false);
@@ -132,7 +122,6 @@ export default function AdministrarMultas({ onLogout }) {
     const handleEditar = async () => {
         setEditando(true);
         setEditarError('');
-        const token = localStorage.getItem('token');
         
         try {
             const payload = {
@@ -141,24 +130,7 @@ export default function AdministrarMultas({ onLogout }) {
                 direccion: formDataEdit.direccion
             };
 
-            const response = await fetch(`/multa/edit/${selectedMultaEditar}`, {
-                method: 'PATCH',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify(payload)
-            });
-
-            if (!response.ok) {
-                let errorMsg = 'Error al actualizar la multa';
-                try {
-                    const errorData = await response.json();
-                    if (errorData && errorData.error) errorMsg = errorData.error;
-                    else if (errorData && errorData.message) errorMsg = errorData.message;
-                } catch (e) {}
-                throw new Error(errorMsg);
-            }
+            await editarMulta(selectedMultaEditar, payload);
 
             setOpenDialogEditar(false);
             fetchMultas();
@@ -177,31 +149,9 @@ export default function AdministrarMultas({ onLogout }) {
 
         setEliminando(true);
         setEliminarError("");
-        const token = localStorage.getItem('token');
 
         try {
-            const payload = {
-                descripcion_desactivada: motivoEliminacion
-            };
-
-            const response = await fetch(`/multa/borrar/${selectedMultaEliminar.id}`, {
-                method: 'PATCH',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify(payload)
-            });
-
-            if (!response.ok) {
-                let errorMsg = 'Error al eliminar la multa';
-                try {
-                    const errorData = await response.json();
-                    if (errorData && errorData.error) errorMsg = errorData.error;
-                    else if (errorData && errorData.message) errorMsg = errorData.message;
-                } catch (e) {}
-                throw new Error(errorMsg);
-            }
+            await eliminarMulta(selectedMultaEliminar.id, motivoEliminacion);
 
             setOpenDialogEliminar(false);
             setMotivoEliminacion("");
@@ -252,7 +202,7 @@ export default function AdministrarMultas({ onLogout }) {
                         <TextField 
                             placeholder="Buscar por Patente..." 
                             variant="standard" 
-                            InputProps={{ disableUnderline: true }} 
+                            slotProps={{ input: { disableUnderline: true } }} 
                             sx={{ ml: 2, flex: 1 }} 
                             value={busqueda} 
                             onChange={(e) => {
@@ -307,7 +257,14 @@ export default function AdministrarMultas({ onLogout }) {
                                                 </TableCell>
                                                 <TableCell align="center">
                                                     <Chip 
-                                                        label={multa.tipo_multa?.nombre || multa.tipoMulta?.nombre || multa.tipo_multa || multa.tipoMulta || 'Desconocido'} 
+                                                         label={
+                                                             (typeof multa.tipo_multa === 'string' ? multa.tipo_multa : null) ||
+                                                             (typeof multa.tipoMulta === 'string' ? multa.tipoMulta : null) ||
+                                                             multa.tipo_multa?.nombre || 
+                                                             multa.tipoMulta?.nombre || 
+                                                             multa.nombreTipoMulta || 
+                                                             'Desconocido'
+                                                         } 
                                                         color="primary" 
                                                         variant="outlined" 
                                                         size="small" 
@@ -347,23 +304,43 @@ export default function AdministrarMultas({ onLogout }) {
                                                         title="Editar Multa"
                                                         onClick={() => {
                                                             setSelectedMultaEditar(multa.id);
-                                                            const multaTipoId = multa.idTipoMulta || multa.tipo_multa?.id || multa.tipoMulta?.id;
-                                                            let foundPadre = '';
-                                                            if (multaTipoId && tiposMultaMenu.length > 0) {
-                                                                for (const tm of tiposMultaMenu) {
-                                                                    if (tm.hijos && tm.hijos.find(h => h.id === multaTipoId)) {
-                                                                        foundPadre = tm.padre;
-                                                                        break;
-                                                                    }
-                                                                }
-                                                            }
-                                                            setPadreEdit(foundPadre);
+                                                            
+                                                            const getNombre = (m) => {
+                                                                if (!m) return '';
+                                                                if (typeof m.tipo_multa === 'string') return m.tipo_multa;
+                                                                if (typeof m.tipoMulta === 'string') return m.tipoMulta;
+                                                                if (m.tipo_multa?.nombre) return m.tipo_multa.nombre;
+                                                                if (m.tipoMulta?.nombre) return m.tipoMulta.nombre;
+                                                                if (m.nombreTipoMulta) return m.nombreTipoMulta;
+                                                                if (m.tipoMultaNombre) return m.tipoMultaNombre;
+                                                                return '';
+                                                            };
+
+                                                            const getId = (m) => {
+                                                                if (!m) return null;
+                                                                if (m.idTipoMulta) return m.idTipoMulta;
+                                                                if (m.tipo_multa?.id) return m.tipo_multa.id;
+                                                                if (m.tipoMulta?.id) return m.tipoMulta.id;
+                                                                if (typeof m.tipo_multa === 'number') return m.tipo_multa;
+                                                                if (typeof m.tipoMulta === 'number') return m.tipoMulta;
+                                                                return null;
+                                                            };
+
+                                                            const multaTipoId = getId(multa);
+                                                            const multaTipoNombre = getNombre(multa);
+                                                            
+                                                            const initialTipo = (multaTipoId || multaTipoNombre) ? { 
+                                                                id: multaTipoId, 
+                                                                nombre: multaTipoNombre || (multaTipoId ? `Tipo Multa #${multaTipoId}` : '') 
+                                                            } : null;
+
                                                             setFormDataEdit({
                                                                 patente: multa.patente || '',
                                                                 direccion: multa.direccion || '',
                                                                 ubicacion: multa.ubicacion || '',
-                                                                tipo_multa: multaTipoId ? { id: multaTipoId } : null
+                                                                tipo_multa: initialTipo
                                                             });
+                                                            setInputValueTipoMulta(multaTipoNombre);
                                                             setEditarError('');
                                                             setOpenDialogEditar(true);
                                                         }}
@@ -461,35 +438,41 @@ export default function AdministrarMultas({ onLogout }) {
                 <DialogContent dividers>
                     {editarError && <Alert severity="error" sx={{ mb: 2 }}>{editarError}</Alert>}
                     <Box sx={{ mt: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
-                        <FormControl fullWidth variant="outlined">
-                            <InputLabel>Categoría de Multa (Padre)</InputLabel>
-                            <Select
-                                value={padreEdit}
-                                onChange={(e) => {
-                                    setPadreEdit(e.target.value);
-                                    setFormDataEdit(prev => ({ ...prev, tipo_multa: null }));
-                                }}
-                                label="Categoría de Multa (Padre)"
-                            >
-                                {tiposMultaMenu.map(tm => (
-                                    <MenuItem key={tm.padre} value={tm.padre}>{tm.padre}</MenuItem>
-                                ))}
-                            </Select>
-                        </FormControl>
-
-                        <FormControl fullWidth variant="outlined">
-                            <InputLabel>Tipo de Multa Específico</InputLabel>
-                            <Select
-                                value={formDataEdit.tipo_multa?.id || ''}
-                                onChange={(e) => setFormDataEdit(prev => ({ ...prev, tipo_multa: { id: e.target.value } }))}
-                                label="Tipo de Multa Específico"
-                                disabled={!padreEdit}
-                            >
-                                {padreEdit && tiposMultaMenu.find(tm => tm.padre === padreEdit)?.hijos.map(hijo => (
-                                    <MenuItem key={hijo.id} value={hijo.id}>{hijo.nombre}</MenuItem>
-                                ))}
-                            </Select>
-                        </FormControl>
+                        <Autocomplete
+                            fullWidth
+                            options={opcionesTipoMulta}
+                            loading={cargandoTiposMulta}
+                            getOptionLabel={(option) => {
+                                if (typeof option === 'string') return option;
+                                return option.nombre || '';
+                            }}
+                            isOptionEqualToValue={(option, value) => option?.id === value?.id}
+                            value={formDataEdit.tipo_multa}
+                            onChange={(event, newValue) => {
+                                setFormDataEdit(prev => ({ ...prev, tipo_multa: newValue }));
+                            }}
+                            inputValue={inputValueTipoMulta}
+                            onInputChange={(event, newInputValue) => {
+                                setInputValueTipoMulta(newInputValue);
+                            }}
+                            renderInput={(params) => (
+                                <TextField
+                                    {...params}
+                                    label="Tipo de Multa"
+                                    variant="outlined"
+                                    placeholder="Escriba para buscar tipo de multa..."
+                                    InputProps={{
+                                        ...params.InputProps,
+                                        endAdornment: (
+                                            <React.Fragment>
+                                                {cargandoTiposMulta ? <CircularProgress color="inherit" size={20} /> : null}
+                                                {params.InputProps?.endAdornment}
+                                            </React.Fragment>
+                                        ),
+                                    }}
+                                />
+                            )}
+                        />
 
                         <TextField
                             fullWidth

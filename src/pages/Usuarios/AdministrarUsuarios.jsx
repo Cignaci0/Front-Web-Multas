@@ -10,11 +10,12 @@ import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
 import { regiones, comunas } from "../../utils/dataGeografica";
+import { getPerfiles, getUsuarios, crearUsuario, editarUsuario } from "../../services/usuariosService";
 
 function AdministrarUsuarios({ onLogout }) {
     const [usuarios, setUsuarios] = useState([]);
     const [perfiles, setPerfiles] = useState([]);
-    const [cargando, setCargando] = useState(false);
+    const [cargando, setCargando] = useState(true);
     const [error, setError] = useState(null);
 
     // Paginación
@@ -61,10 +62,7 @@ function AdministrarUsuarios({ onLogout }) {
     const comunasDisponiblesEdit = comunas.filter(c => c.regionId === formRegionEdit);
 
     useEffect(() => {
-        const timer = setTimeout(() => {
-            fetchUsuarios();
-        }, 300);
-        return () => clearTimeout(timer);
+        fetchUsuarios();
     }, [pagina, filaPorPagina]);
 
     useEffect(() => {
@@ -73,14 +71,8 @@ function AdministrarUsuarios({ onLogout }) {
 
     const fetchPerfiles = async () => {
         try {
-            const token = localStorage.getItem('token');
-            const response = await fetch('/perfil', {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (response.ok) {
-                const data = await response.json();
-                setPerfiles(data);
-            }
+            const data = await getPerfiles();
+            setPerfiles(data);
         } catch (e) {
             console.error("Error al cargar perfiles", e);
         }
@@ -89,22 +81,7 @@ function AdministrarUsuarios({ onLogout }) {
     const fetchUsuarios = async () => {
         try {
             setCargando(true);
-            const token = localStorage.getItem('token');
-            
-            const response = await fetch(`/usuario?pagina=${pagina}&tamanio=${filaPorPagina}`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-            if (!response.ok) {
-                if (response.status === 401 || response.status === 403) {
-                    if (onLogout) onLogout();
-                    return;
-                }
-                throw new Error('No se pudieron obtener los usuarios');
-            }
-            
-            const data = await response.json();
+            const data = await getUsuarios(pagina, filaPorPagina);
             
             if (data && data.content) {
                 setUsuarios(data.content);
@@ -115,6 +92,10 @@ function AdministrarUsuarios({ onLogout }) {
                 setTotalUsuarios(data.totalElements || arr.length);
             }
         } catch (err) {
+            if (err.status === 401 || err.status === 403) {
+                if (onLogout) onLogout();
+                return;
+            }
             setError(err.message);
         } finally {
             setCargando(false);
@@ -134,7 +115,6 @@ function AdministrarUsuarios({ onLogout }) {
 
         setCreando(true);
         setCrearError('');
-        const token = localStorage.getItem('token');
 
         const payload = {
             username: formData.username,
@@ -145,29 +125,7 @@ function AdministrarUsuarios({ onLogout }) {
         };
 
         try {
-            const response = await fetch(`/usuario`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify(payload)
-            });
-
-            if (!response.ok) {
-                let errorMsg = 'Error al crear el usuario';
-                try {
-                    const errorData = await response.json();
-                    if (errorData && errorData.error) {
-                        errorMsg = errorData.error;
-                    } else if (errorData && errorData.message) {
-                        errorMsg = errorData.message;
-                    }
-                } catch (e) {
-                    // Fallback
-                }
-                throw new Error(errorMsg);
-            }
+            await crearUsuario(payload);
 
             setOpenDialogCrear(false);
             setFormData({ username: '', password: '', email: '', comuna: '', perfil: '' });
@@ -228,7 +186,6 @@ function AdministrarUsuarios({ onLogout }) {
 
         setEditando(true);
         setEditarError('');
-        const token = localStorage.getItem('token');
 
         const payload = {
             email: formDataEdit.email,
@@ -244,24 +201,7 @@ function AdministrarUsuarios({ onLogout }) {
         }
 
         try {
-            const response = await fetch(`/usuario/${usuarioEditando}`, {
-                method: 'PATCH',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify(payload)
-            });
-
-            if (!response.ok) {
-                let errorMsg = 'Error al actualizar el usuario';
-                try {
-                    const errorData = await response.json();
-                    if (errorData && errorData.error) errorMsg = errorData.error;
-                    else if (errorData && errorData.message) errorMsg = errorData.message;
-                } catch (e) {}
-                throw new Error(errorMsg);
-            }
+            await editarUsuario(usuarioEditando, payload);
 
             setOpenDialogEditar(false);
             fetchUsuarios();
@@ -363,7 +303,7 @@ function AdministrarUsuarios({ onLogout }) {
                                             ))
                                         ) : (
                                             <TableRow>
-                                                <TableCell colSpan={6} align="center" sx={{ py: 3 }}>
+                                                <TableCell colSpan={7} align="center" sx={{ py: 3 }}>
                                                     <Typography variant="body1" color="text.secondary">
                                                         No se encontraron registros.
                                                     </Typography>

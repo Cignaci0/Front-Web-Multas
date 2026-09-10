@@ -5,6 +5,7 @@ import {
     Stack, Checkbox, CircularProgress, Alert
 } from "@mui/material";
 import ContentPasteIcon from '@mui/icons-material/ContentPaste';
+import { getPerfiles, getTodosModulos, getModulosAsignados, asignarModulos } from '../../services/modulosService';
 
 export default function AsignarModulos({ onLogout }) {
     const [perfiles, setPerfiles] = useState([]);
@@ -17,34 +18,17 @@ export default function AsignarModulos({ onLogout }) {
     const [error, setError] = useState(null);
     const [mensajeExito, setMensajeExito] = useState(null);
 
-    // Helper functions for fetch with token
-    const fetchWithToken = async (url, options = {}) => {
-        const token = localStorage.getItem('token');
-        const defaultHeaders = {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-        };
-        const response = await fetch(url, {
-            ...options,
-            headers: { ...defaultHeaders, ...options.headers }
-        });
-        if (!response.ok) {
-            if (response.status === 401 || response.status === 403) {
-                if (onLogout) onLogout();
-                throw new Error("Sesión expirada");
-            }
-            throw new Error(`Error HTTP: ${response.status}`);
-        }
-        return response.json();
-    };
-
     // Load perfiles on mount
     useEffect(() => {
         const loadPerfiles = async () => {
             try {
-                const data = await fetchWithToken('/perfil');
+                const data = await getPerfiles();
                 setPerfiles(data);
             } catch (err) {
+                if (err.status === 401 || err.status === 403) {
+                    if (onLogout) onLogout();
+                    return;
+                }
                 setError("Error al cargar perfiles: " + err.message);
             }
         };
@@ -65,9 +49,9 @@ export default function AsignarModulos({ onLogout }) {
             setMensajeExito(null);
             try {
                 // Fetch todos los modulos
-                const todos = await fetchWithToken('/modulo');
+                const todos = await getTodosModulos();
                 // Fetch asignados al perfil
-                const asignados = await fetchWithToken(`/modulo/asignados/${filtroPerfil}`);
+                const asignados = await getModulosAsignados(filtroPerfil);
                 
                 // Set asignados (derecha)
                 setListaDerecha(asignados || []);
@@ -79,6 +63,10 @@ export default function AsignarModulos({ onLogout }) {
                 setListaIzquierda(disponibles);
                 setListaSeleccionados([]);
             } catch (err) {
+                if (err.status === 401 || err.status === 403) {
+                    if (onLogout) onLogout();
+                    return;
+                }
                 setError("Error al cargar módulos: " + err.message);
             } finally {
                 setCargando(false);
@@ -95,12 +83,13 @@ export default function AsignarModulos({ onLogout }) {
         setMensajeExito(null);
         try {
             const idsModulos = listaDerecha.map(item => item.id);
-            await fetchWithToken(`/modulo/asignar/${filtroPerfil}`, {
-                method: 'POST',
-                body: JSON.stringify({ idsModulos })
-            });
+            await asignarModulos(filtroPerfil, { idsModulos });
             setMensajeExito("Módulos asignados correctamente.");
         } catch (err) {
+            if (err.status === 401 || err.status === 403) {
+                if (onLogout) onLogout();
+                return;
+            }
             setError("Error al guardar asignaciones: " + err.message);
         } finally {
             setCargando(false);
@@ -230,7 +219,7 @@ export default function AsignarModulos({ onLogout }) {
                                                 color="primary"
                                             />
                                         </ListItemIcon>
-                                        <ListItemText primary={item.nombre} primaryTypographyProps={{ fontWeight: 500 }} />
+                                        <ListItemText primary={<Typography sx={{ fontWeight: 500 }}>{item.nombre}</Typography>} />
                                     </ListItem>
                                 ))}
                                 {listaIzquierda.length === 0 && <Typography sx={{ p: 3, color: 'text.secondary', textAlign: 'center' }}>No hay módulos disponibles</Typography>}
@@ -269,7 +258,7 @@ export default function AsignarModulos({ onLogout }) {
                                                 color="primary"
                                             />
                                         </ListItemIcon>
-                                        <ListItemText primary={item.nombre} primaryTypographyProps={{ fontWeight: 500 }} />
+                                        <ListItemText primary={<Typography sx={{ fontWeight: 500 }}>{item.nombre}</Typography>} />
                                     </ListItem>
                                 ))}
                                 {listaDerecha.length === 0 && <Typography sx={{ p: 3, color: 'text.secondary', textAlign: 'center' }}>No hay módulos asignados</Typography>}

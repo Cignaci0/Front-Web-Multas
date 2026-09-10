@@ -10,10 +10,11 @@ import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
 import { regiones, comunas } from "../../utils/dataGeografica";
+import { getInspectores, crearInspector, editarInspector } from "../../services/inspectoresService";
 
 function AdministrarInspector({ onLogout }) {
     const [inspectores, setInspectores] = useState([]);
-    const [cargando, setCargando] = useState(false);
+    const [cargando, setCargando] = useState(true);
     const [error, setError] = useState(null);
 
     // Paginación
@@ -57,31 +58,13 @@ function AdministrarInspector({ onLogout }) {
     const comunasDisponiblesEdit = comunas.filter(c => c.regionId === formRegionEdit);
 
     useEffect(() => {
-        const timer = setTimeout(() => {
-            fetchInspectores();
-        }, 300);
-        return () => clearTimeout(timer);
+        fetchInspectores();
     }, [pagina, filaPorPagina]);
 
     const fetchInspectores = async () => {
         try {
             setCargando(true);
-            const token = localStorage.getItem('token');
-            
-            const response = await fetch(`/inspector?pagina=${pagina}&tamanio=${filaPorPagina}`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-            if (!response.ok) {
-                if (response.status === 401 || response.status === 403) {
-                    if (onLogout) onLogout();
-                    return;
-                }
-                throw new Error('No se pudieron obtener los inspectores');
-            }
-            
-            const data = await response.json();
+            const data = await getInspectores(pagina, filaPorPagina);
             
             if (data && data.content) {
                 setInspectores(data.content);
@@ -92,6 +75,10 @@ function AdministrarInspector({ onLogout }) {
                 setTotalInspectores(data.totalElements || arr.length);
             }
         } catch (err) {
+            if (err.status === 401 || err.status === 403) {
+                if (onLogout) onLogout();
+                return;
+            }
             setError(err.message);
         } finally {
             setCargando(false);
@@ -113,7 +100,6 @@ function AdministrarInspector({ onLogout }) {
 
         setCreando(true);
         setCrearError('');
-        const token = localStorage.getItem('token');
 
         const payload = {
             username: formData.username,
@@ -125,27 +111,7 @@ function AdministrarInspector({ onLogout }) {
         };
 
         try {
-            const response = await fetch('/usuario/inspector', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify(payload)
-            });
-
-            if (!response.ok) {
-                let errorMsg = 'Error al crear el inspector';
-                try {
-                    const errorData = await response.json();
-                    if (errorData && errorData.error) {
-                        errorMsg = errorData.error;
-                    } else if (errorData && errorData.message) {
-                        errorMsg = errorData.message;
-                    }
-                } catch (e) {}
-                throw new Error(errorMsg);
-            }
+            await crearInspector(payload);
 
             setOpenDialogCrear(false);
             setFormData({ username: '', password: '', email: '', nombre: '', apellido: '', comuna: '' });
@@ -201,10 +167,8 @@ function AdministrarInspector({ onLogout }) {
 
         setEditando(true);
         setEditarError('');
-        const token = localStorage.getItem('token');
 
         const payload = {
-           
             email: formDataEdit.email,
             nombre: formDataEdit.nombre,
             apellido: formDataEdit.apellido,
@@ -212,24 +176,7 @@ function AdministrarInspector({ onLogout }) {
         };
 
         try {
-            const response = await fetch(`/inspector/${inspectorEditando}`, {
-                method: 'PATCH',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify(payload)
-            });
-
-            if (!response.ok) {
-                let errorMsg = 'Error al actualizar el inspector';
-                try {
-                    const errorData = await response.json();
-                    if (errorData && errorData.error) errorMsg = errorData.error;
-                    else if (errorData && errorData.message) errorMsg = errorData.message;
-                } catch (e) {}
-                throw new Error(errorMsg);
-            }
+            await editarInspector(inspectorEditando, payload);
 
             setOpenDialogEditar(false);
             fetchInspectores();
